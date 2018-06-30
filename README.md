@@ -29,7 +29,3 @@ Follow the following steps to run the catalog app:
 - Visit `http://0.0.0.0.xip.io:5000/` from your browser to view the catalog app
 
 Note that xip is a domain name that provides wildcard DNS for any IP address. This allows testing of apps on other devices on the local network. Visit `xip.io` for more details.
-
-## Credits
-
-This project is generated as part of Udacity's full-stack web development program.
