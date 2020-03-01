@@ -21,7 +21,7 @@ Follow the following steps to run the catalog app:
 
 - Change to the `Catalog_App` directory: `cd Catalog_App`
 - Start the Vagrant VM: `vagrant up`
-- SSH into the Vagrant VM: `ssh vagrant`
+- SSH into the Vagrant VM: `vagrant ssh`
 - Change to the Vagrant directory shared between the VM and your machine: `cd ../../vagrant`
 - Create the database: `python database_setup.py`
 - (Optional) populate the database: `python populate_db.py`
