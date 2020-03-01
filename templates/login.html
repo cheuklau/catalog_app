@@ -1,73 +1,50 @@
-<!DOCTYPE html>
-
 <html>
-
   <head>
-
-    <!-- Pre-requisites for Google sign-in -->
     <script src="//ajax.googleapis.com/ajax/libs/jquery/1.8.2/jquery.min.js"> </script>
-    <script src="//apis.google.com/js/platform.js?onload=start" async defer> </script>
-
+    <script src="https://apis.google.com/js/platform.js?onload=renderButton" async defer></script>
+    <!-- Client id should be injected as a secret -->
+    <meta name="google-signin-client_id" content="1027310311467-s096e7s3nhrfeiblcunkd18sdjjkd9dj.apps.googleusercontent.com">
   </head>
-
-  <body>  
-
-    <!-- Google sign-in button -->      
-    <div id="signinButton">
-
-      <span class="g-signin"
-        data-scope="openid email"
-        data-clientid="1027310311467-s096e7s3nhrfeiblcunkd18sdjjkd9dj.apps.googleusercontent.com"
-        data-redirecturi="postmessage"
-        data-accesstype="offline"
-        data-cookiepolicy="single_host_origin"
-        data-callback="signInCallback"
-        data-approvalprompt="force">
-      </span>
-
-    </div>
-
-    <div id="result"></div>
-
+  <body>
+    <div id="my-signin2"></div>
     <script>
-
-    function signInCallback(authResult) {
-
-      if (authResult['code']) {
-
+      // How to handle successful logins
+      function onSuccess(googleUser) {
+        console.log('Logged in as: ' + googleUser.getBasicProfile().getName());
         // Hide sign-in button now that user is signed in
-        $('#signinButton').attr('style', 'display: none');
-
-        // Send one-time-use code to the server.
-        // If server responds, write a 'login successful' message to the web page
-        // then redirect back to the main page.
+        $('#my-signin2').attr('style', 'display: none');
+        // Send one-time-use code to the server via ajax
         $.ajax({
           type: 'POST',
           url: '/gconnect?state={{STATE}}',
           processData: false,
-          data: authResult['code'],
+          data: googleUser.getAuthResponse(includeAuthorizationData=true).access_token,
           contentType: 'application/octet-stream; charset=utf-8',
           success: function(result) {
-            // Handle or verify the server response if necessary.
-            if (result) {
-              $('#result').html('Login Successful!</br>'+ result + '</br>Redirecting...')
-              setTimeout(function() {
-                window.location.href = "/";
-              }, 4000);
-            } 
-            else if (authResult['error']) {
-              console.log('There was an error: ' + authResult['error']);
-            } 
-            else {
-              $('#result').html('Failed to make a server-side call. Check your configuration and console.');
-            }
+            // Perform redirect to homepage when ajax call succeeds
+            $('#result').html('Login Successful!</br>'+ result + '</br>Redirecting...')
+            setTimeout(function() {
+              window.location.href = "/";
+            }, 4000);
           }
-        }); 
+        });
       }
-    }
-    
+      // How to handle failed logins
+      function onFailure(error) {
+          console.log(error);
+      }
+      // Render the button
+      function renderButton() {
+          gapi.signin2.render('my-signin2', {
+              'scope': 'profile email',
+              'width': 240,
+              'height': 50,
+              'longtitle': true,
+              'theme': 'dark',
+              'onsuccess': onSuccess,
+              'onfailure': onFailure
+          });
+      }
     </script>
-
   </body>
-
 </html>

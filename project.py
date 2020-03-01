@@ -1,6 +1,5 @@
 # Import flask dependencies
-from flask import Flask, render_template, request, redirect
-from flask import jsonify, url_for, flash
+from flask import Flask, render_template, request, redirect, jsonify, url_for, flash, make_response
 
 # Import SQLAlchemy dependencies
 from sqlalchemy import create_engine, asc, desc
@@ -9,25 +8,13 @@ from database_setup import Base, User, Category, Item
 
 # Imports for anti-forgery state token
 from flask import session as login_session
-import random
-import string
+import random, string, httplib2, json, requests
 
 # Imports for GConnect
-from oauth2client.client import flow_from_clientsecrets
-from oauth2client.client import FlowExchangeError
-import httplib2
-import json
-from flask import make_response
-import requests
+from oauth2client.client import flow_from_clientsecrets, FlowExchangeError
 
 # Create instance of flask class with the name of the running application
 app = Flask(__name__)
-
-# Define client-id and application name for GConnect
-# todo: Change application name to Catalog App
-CLIENT_ID = json.loads(
-    open('client_secrets.json', 'r').read())['web']['client_id']
-APPLICATION_NAME = "Catalog App"
 
 # Create session and connect to database
 engine = create_engine('sqlite:///catalog.db')
@@ -35,13 +22,12 @@ Base.metadata.bind = engine
 DBSession = sessionmaker(bind=engine)
 session = DBSession()
 
-
 @app.route('/login')
 def showLogin():
-    ''' Displays log-in page.
+    """ Displays log-in page.
 
-        Creates and passes anti-forgery state token to log-in page.
-    '''
+        Creates and passes anti-forgery state token to login page.
+    """
 
     state = ''.join(random.choice(string.ascii_uppercase + string.digits)
                     for x in xrange(32))
@@ -51,10 +37,9 @@ def showLogin():
 
 @app.route('/gconnect', methods=['POST'])
 def gconnect():
-    ''' Connects user to Google for third-party authorization.
+    """ Connects user to Google for third-party authorization.
 
-
-    '''
+    """
 
     # Confirm token client sent to server matches token from server
     if request.args.get('state') != login_session['state']:
@@ -62,69 +47,17 @@ def gconnect():
         response.headers['Content-Type'] = 'application/json'
         return response
 
-    # Obtain authorization code if anti-forgery token matches
-    code = request.data
-
-    # Exchange one-time code for access token to server
-    try:
-        oauth_flow = flow_from_clientsecrets('client_secrets.json', scope='')
-        oauth_flow.redirect_uri = 'postmessage'
-        credentials = oauth_flow.step2_exchange(code)
-    except FlowExchangeError:
-        response = make_response(
-            json.dumps('Failed to upgrade the authorization code.'), 401)
-        response.headers['Content-Type'] = 'application/json'
-        return response
-
-    # Check access token is valid
-    access_token = credentials.access_token
-    url = ('https://www.googleapis.com/oauth2/v1/tokeninfo?access_token=%s'
-           % access_token)
-    h = httplib2.Http()
-    result = json.loads(h.request(url, 'GET')[1])
-
-    # If error in access token info, abort
-    if result.get('error') is not None:
-        response = make_response(json.dumps(result.get('error')), 500)
-        response.headers['Content-Type'] = 'application/json'
-        return response
-
-    # Verify access token is used for intended user
-    gplus_id = credentials.id_token['sub']
-    if result['user_id'] != gplus_id:
-        response = make_response(
-            json.dumps("Token's user ID doesn't match given user ID."), 401)
-        response.headers['Content-Type'] = 'application/json'
-        return response
-
-    # Verify access token is valid for this app
-    if result['issued_to'] != CLIENT_ID:
-        response = make_response(
-            json.dumps("Token's client ID does not match app's."), 401)
-        print "Token's client ID does not match app's."
-        response.headers['Content-Type'] = 'application/json'
-        return response
-
-    # Check if user is already logged in.
-    stored_access_token = login_session.get('access_token')
-    stored_gplus_id = login_session.get('gplus_id')
-    if stored_access_token is not None and gplus_id == stored_gplus_id:
-        response = make_response(json.dumps(
-            'Current user already connected.'), 200)
-        response.headers['Content-Type'] = 'application/json'
-        return response
-
-    # Store access token in session for later use.
-    login_session['access_token'] = credentials.access_token
-    login_session['gplus_id'] = gplus_id
+    # Store access token in session for later use
+    access_token =  request.data
+    login_session['access_token'] = access_token
 
     # Get user info
     userinfo_url = "https://www.googleapis.com/oauth2/v1/userinfo"
-    params = {'access_token': credentials.access_token, 'alt': 'json'}
+    params = {'access_token': access_token, 'alt': 'json'}
     answer = requests.get(userinfo_url, params=params)
     data = answer.json()
-    login_session['username'] = data["name"]
-    login_session['email'] = data["email"]
+    login_session['username'] = data['name']
+    login_session['email'] = data['email']
 
     # See if user exists, if not then make a new one
     user_id = getUserID(login_session['email'])
@@ -138,7 +71,39 @@ def gconnect():
     output += login_session['username']
     output += '!</h1>'
     flash("You are now logged in as %s" % login_session['username'])
-    print "done!"
+    return output
+
+
+@app.route('/gdisconnect')
+def gdisconnect():
+    """ Disconnect user from Google.
+
+    """
+
+    access_token = login_session.get('access_token')
+    if access_token is None:
+        response = make_response(json.dumps(
+            'Current user not connected'), 401)
+        response.headers['Content-Type'] = 'application/json'
+        return response
+    # Revoke access token
+    url = 'https://accounts.google.com/o/oauth2/revoke?token=' + access_token
+    h = httplib2.Http()
+    result = h.request(url, 'GET')[0]
+    output = ''
+    if result['status'] == '200':
+        # Delete login session
+        del login_session['access_token']
+        del login_session['username']
+        del login_session['email']
+        output += '<h1> Successfully disconnected </h1>'
+    else:
+        output += '<h1> Unable to disconnect user </h1>'
+    # Button IP address should be a latebind
+    output += """<a href = "http://0.0.0.0.xip.io:5000/">"""
+    output += '<button class="btn-default">'
+    output += '<span class="glyphicon" aria-hidden="true"></span>'
+    output += 'Back to Catalog App </button> </a>'
     return output
 
 
@@ -177,50 +142,6 @@ def getUserID(email):
         return user.id
     except:
         return None
-
-
-@app.route('/gdisconnect')
-def gdisconnect():
-    ''' Disconnect user from Google
-
-    '''
-
-    access_token = login_session.get('access_token')
-    if access_token is None:
-        print 'Access Token is None'
-        response = make_response(json.dumps(
-            'Current user not connected'), 401)
-        response.headers['Content-Type'] = 'application/json'
-        return response
-    print 'In gdisconnect access token is', access_token
-    print 'User name is: '
-    print login_session['username']
-    url = 'https://accounts.google.com/o/oauth2/revoke?token=' + access_token
-    h = httplib2.Http()
-    result = h.request(url, 'GET')[0]
-    print 'result is '
-    print result
-    if result['status'] == '200':
-        del login_session['access_token']
-        del login_session['gplus_id']
-        del login_session['username']
-        del login_session['email']
-        output = ''
-        output += '<h1> Successfully disconnected </h1>'
-        output += """<a href = "http://0.0.0.0.xip.io:5000/">"""
-        output += '<button class="btn-default">'
-        output += '<span class="glyphicon" aria-hidden="true"></span>'
-        output += 'Back to Catalog App </button> </a>'
-        return output
-    else:
-        output = ''
-        output += '<h1> Unable to disconnect user </h1>'
-        output += """<a href = "http://0.0.0.0.xip.io:5000/">"""
-        output += '<button class="btn-default">'
-        output += '<span class="glyphicon" aria-hidden="true"></span>'
-        output += 'Back to Catalog App </button> </a>'
-        return output
-
 
 @app.route('/category/JSON')
 def categoryJSON():
