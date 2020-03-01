@@ -1,0 +1,5 @@
+.DS_Store
+.vagrant/
+catalog.db
+*.pyc
+client_secrets.json
